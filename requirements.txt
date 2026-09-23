@@ -1,0 +1,10 @@
+Django==5.1.7
+jpype1==1.5.0        # Para JDBC
+psycopg2-binary==2.9.10
+pymongo==4.10.0
+python-dotenv==1.0.0
+pandas==2.2.3        # Opcional, para ler CSVs
+openpyxl==3.1.5      # Se for ler Excel
+pandas==2.2.3
+pyarrow==19.0.0
+fastparquet==2024.11.0

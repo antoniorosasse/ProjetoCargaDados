@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtualenv
+venv/
+env/
+ENV/
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media/
+logs/
+
+# Segredos
+.env
+.env.*
+!.env.example
+
+# JDBC driver da IBM (baixar separado, ver README)
+lib/jt400.jar
+
+# Temporarios do ETL (gerados quando ha erro)
+pulados_*.csv
+*.parquet
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema
+.DS_Store
+Thumbs.db
