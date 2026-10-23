@@ -180,6 +180,14 @@ class CNPJProcessor:
             if df[col].dtype == 'object':
                 df[col] = df[col].apply(self._limpar_texto)
         
+        # 2b. CORREÇÃO ESPECÍFICA PARA CNPJ_DV (varchar(2) com zero à esquerda)
+        # O Parquet traz cnpj_dv como uint8 (int), então "1" precisa virar "01".
+        # O cnpj_dv NÃO pode ir para a lista de colunas numéricas, senão perde o zero.
+        if 'cnpj_dv' in df.columns and self.tabela_nome == 'c_estabelecimentos':
+            df['cnpj_dv'] = df['cnpj_dv'].apply(
+                lambda v: str(int(v)).zfill(2) if pd.notna(v) else None
+            )
+        
         # 3. CORREÇÃO ESPECÍFICA PARA UF
         if 'uf' in df.columns:
             df['uf'] = df['uf'].apply(self._limpar_uf)
@@ -189,7 +197,7 @@ class CNPJProcessor:
             'c_cnaes': ['cnae'],
             'c_empresas': ['nat_juridica', 'qual_resp'],
             'c_estabelecimentos': [
-                'cnpj_dv', 'cd_matriz_filial', 'cd_sit_cadastro', 'motivo_sit_cadastro',
+                'cd_matriz_filial', 'cd_sit_cadastro', 'motivo_sit_cadastro',
                 'cd_pais', 'cnae_principal', 'municipio'
             ],
             'c_motivos': ['cd_motivo_sit_cadastro'],
