@@ -32,6 +32,7 @@ o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antonioro
     │   │   ├── migrar_postgres_para_mongo.py
     │   │   ├── migrar_para_mongo.py
     │   │   ├── migrar_tudo_para_mongo.py
+    │   │   ├── carregar_pessoas_db2.py     # Popula AROSASSE1.PESSOAS no IBM i (DB2)
     │   │   ├── testar_as400.py
     │   │   ├── testar_mongo.py
     │   │   └── testar_postgres.py
@@ -169,7 +170,7 @@ Opcoes uteis:
 - `--progress N` — intervalo de progresso (padrao: 50000)
 - `--conflict {update,nothing,none}` — estrategia de conflito
 - `--test N` — modo teste (processa apenas N registros)
-- `--dump` — gera CSV com registros pulados
+- `--dump` — gera CSV com registros pulados (apenas para o destino Mongo)
 - `--filtro "coluna != valor"` — filtro SQL simples
 
 ### Migrar Postgres -> Mongo
@@ -182,6 +183,28 @@ Opcoes uteis:
 
     python manage.py migrar_tudo_para_mongo
     python manage.py migrar_tudo_para_mongo --force
+
+## Carregar PESSOAS no IBM i (DB2)
+
+O `carregar_pessoas_db2` popula a tabela `AROSASSE1.PESSOAS` do IBM i com dados
+**sinteticos**, montados a partir dos socios PF (`c_socios`) e do endereco da
+matriz (`c_estabelecimentos` + `c_municipios`) no Postgres. E o comando que
+alimenta o [as400_interface](https://github.com/antoniorosasse/as400_interface),
+que le essa tabela por JDBC.
+
+    # Dry-run: gera e imprime, sem INSERT no DB2
+    python manage.py carregar_pessoas_db2 --quantidade 10 --test
+
+    # Carga real
+    python manage.py carregar_pessoas_db2 --quantidade 1000000 --batch 500
+
+Opcoes:
+
+- `--quantidade N` (obrigatorio) — quantos registros inserir
+- `--batch N` — tamanho do lote no JDBC (padrao: 2000)
+- `--progress N` — progresso a cada N registros (padrao: 10000)
+- `--seed N` — seed do gerador aleatorio (carga reproduzivel)
+- `--test` — dry-run, nao faz INSERT
 
 ## Tabelas de CNPJ suportadas
 
@@ -219,6 +242,12 @@ Ver `.env.example`. As principais:
 - **Local:** apenas (nao tem producao)
 - **Parquet:** os arquivos ficam fora do projeto (ex:
   `/home/neto/DataSetsTeste/base_cnpj/`)
+
+## Testes
+
+O projeto **nao tem testes automatizados** (`etl/tests.py` esta vazio). A
+validacao e feita pelos comandos `testar_*` (que conferem as conexoes) e pelo
+`--test N` do `importar_cnpj`, que processa apenas N registros antes da carga real.
 
 ## Repositorios relacionados
 
