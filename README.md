@@ -1,9 +1,9 @@
 # ProjetoCargaDados
 
-ETL de dados publicos de CNPJ da Receita Federal. Le arquivos Parquet
+ETL de dados públicos de CNPJ da Receita Federal. Lê arquivos Parquet
 em chunks e carrega no PostgreSQL e/ou MongoDB.
 
-Este repositorio **nao inclui os dados**. Ele e a ferramenta que popula
+Este repositório **não inclui os dados**. Ele é a ferramenta que popula
 o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antoniorosasse/cnpj_interface).
 
 ## Stack
@@ -13,7 +13,7 @@ o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antonioro
 - pandas + pyarrow (leitura de Parquet)
 - PostgreSQL (psycopg2-binary)
 - MongoDB (pymongo)
-- JPype + jt400.jar (conexao com AS/400 via JDBC)
+- JPype + jt400.jar (conexão com AS/400 via JDBC)
 
 ## Estrutura
 
@@ -46,17 +46,17 @@ o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antonioro
 
 ## Requisitos de dados
 
-Este projeto **nao inclui** os Parquet de CNPJ. Voce precisa baixar da
+Este projeto **não inclui** os Parquet de CNPJ. Você precisa baixar da
 fonte oficial ou de um mirror.
 
 De onde baixar:
 
-- **Parquet** (recomendado, e o formato que o projeto le):
+- **Parquet** (recomendado, é o formato que o projeto lê):
   `https://www.kaggle.com/datasets/jurandifranca/cnpj-brasil`
 - **CSV zipado** (fonte oficial, no portal de dados abertos):
   `https://dados.gov.br/dados/conjuntos-dados/cadastro-nacional-da-pessoa-juridica---cnpj`
 
-**Nomes de arquivo esperados** (o importador faz `glob` por estes padroes):
+**Nomes de arquivo esperados** (o importador faz `glob` por estes padrões):
 
     C_Cnaes*.parquet
     C_Empresas*.parquet
@@ -69,16 +69,16 @@ De onde baixar:
     C_Simples*.parquet
     C_Socios*.parquet
 
-O importador tambem aceita variantes sem o prefixo `C_` (ex:
+O importador também aceita variantes sem o prefixo `C_` (ex:
 `Empresas0.parquet`). Os arquivos devem estar **todos na mesma pasta**.
 
-## Pre-requisitos
+## Pré-requisitos
 
 - Python 3.13
 - PostgreSQL 15 rodando em `localhost:5432` (banco `bancocnpj`)
-- MongoDB 8 rodando em `localhost:27017` (so se for usar `--destino mongo`)
+- MongoDB 8 rodando em `localhost:27017` (só se for usar `--destino mongo`)
 - JDK 11+ (pra JVM do JDBC)
-- Credenciais de um IBM i (por padrao, `pub400.com`)
+- Credenciais de um IBM i (por padrão, `pub400.com`)
 
 ## Como rodar local
 
@@ -89,15 +89,15 @@ O importador tambem aceita variantes sem o prefixo `C_` (ex:
     (baixar lib/jt400.jar - ver lib/README.md)
     python manage.py migrate
 
-Conferir as conexoes:
+Conferir as conexões:
 
     python manage.py testar_postgres
     python manage.py testar_mongo     # so se for usar Mongo
     python manage.py testar_as400
 
-## Ordem de execucao (primeira carga)
+## Ordem de execução (primeira carga)
 
-1. Importar as tabelas de lookup (pequenas, rapidas):
+1. Importar as tabelas de lookup (pequenas, rápidas):
 
        python manage.py importar_cnpj --pasta /caminho/dos/parquet --tabela c_cnaes --destino postgres
        python manage.py importar_cnpj --pasta /caminho/dos/parquet --tabela c_motivos --destino postgres
@@ -122,14 +122,14 @@ Conferir as conexoes:
     python manage.py importar_cnpj --pasta /caminho --tabela c_empresas
     python manage.py importar_cnpj --pasta /caminho --test 1000   # teste com N registros
 
-O `--tabela` aceita apenas os 10 nomes validos (`c_cnaes`, `c_empresas`,
+O `--tabela` aceita apenas os 10 nomes válidos (`c_cnaes`, `c_empresas`,
 `c_estabelecimentos`, `c_motivos`, `c_municipios`, `c_naturezas`,
 `c_paises`, `c_qualificacoes`, `c_simples`, `c_socios`). Nome errado
 quebra na hora, com mensagem clara.
 
-### Exemplos praticos
+### Exemplos práticos
 
-Importar `c_estabelecimentos` pro Postgres, so os nao-baixados
+Importar `c_estabelecimentos` pro Postgres, só os não-baixados
 (`cd_sit_cadastro != 8`), em modo teste (100 mil registros):
 
     python manage.py importar_cnpj \
@@ -160,15 +160,15 @@ Migrar `c_estabelecimentos` do Postgres pro Mongo:
         --batch 25000 \
         --progress 100000
 
-Opcoes uteis:
+Opções úteis:
 
-- `--destino {postgres,mongo,ambos}` (padrao: ambos)
-- `--tabela <nome>` (padrao: todas detectadas)
-- `--force` — reprocessa mesmo se ja foi importado
-- `--limit N` — limita numero de arquivos
-- `--batch N` — tamanho do lote (padrao: 10000)
-- `--progress N` — intervalo de progresso (padrao: 50000)
-- `--conflict {update,nothing,none}` — estrategia de conflito
+- `--destino {postgres,mongo,ambos}` (padrão: ambos)
+- `--tabela <nome>` (padrão: todas detectadas)
+- `--force` — reprocessa mesmo se já foi importado
+- `--limit N` — limita número de arquivos
+- `--batch N` — tamanho do lote (padrão: 10000)
+- `--progress N` — intervalo de progresso (padrão: 50000)
+- `--conflict {update,nothing,none}` — estratégia de conflito
 - `--test N` — modo teste (processa apenas N registros)
 - `--dump` — gera CSV com registros pulados (apenas para o destino Mongo)
 - `--filtro "coluna != valor"` — filtro SQL simples
@@ -187,10 +187,10 @@ Opcoes uteis:
 ## Carregar PESSOAS no IBM i (DB2)
 
 O `carregar_pessoas_db2` popula a tabela `AROSASSE1.PESSOAS` do IBM i com dados
-**sinteticos**, montados a partir dos socios PF (`c_socios`) e do endereco da
-matriz (`c_estabelecimentos` + `c_municipios`) no Postgres. E o comando que
+**sintéticos**, montados a partir dos sócios PF (`c_socios`) e do endereço da
+matriz (`c_estabelecimentos` + `c_municipios`) no Postgres. É o comando que
 alimenta o [as400_interface](https://github.com/antoniorosasse/as400_interface),
-que le essa tabela por JDBC.
+que lê essa tabela por JDBC.
 
     # Dry-run: gera e imprime, sem INSERT no DB2
     python manage.py carregar_pessoas_db2 --quantidade 10 --test
@@ -198,57 +198,57 @@ que le essa tabela por JDBC.
     # Carga real
     python manage.py carregar_pessoas_db2 --quantidade 1000000 --batch 500
 
-Opcoes:
+Opções:
 
-- `--quantidade N` (obrigatorio) — quantos registros inserir
-- `--batch N` — tamanho do lote no JDBC (padrao: 2000)
-- `--progress N` — progresso a cada N registros (padrao: 10000)
-- `--seed N` — seed do gerador aleatorio (carga reproduzivel)
-- `--test` — dry-run, nao faz INSERT
+- `--quantidade N` (obrigatório) — quantos registros inserir
+- `--batch N` — tamanho do lote no JDBC (padrão: 2000)
+- `--progress N` — progresso a cada N registros (padrão: 10000)
+- `--seed N` — seed do gerador aleatório (carga reproduzível)
+- `--test` — dry-run, não faz INSERT
 
 ## Tabelas de CNPJ suportadas
 
 | Tabela | O que e | Linhas aprox. |
 |---|---|---|
-| c_cnaes | Codigos CNAE | 1.360 |
+| c_cnaes | Códigos CNAE | 1.360 |
 | c_empresas | Dados cadastrais | 36.9M |
-| c_estabelecimentos | Enderecos, situacao, CNAE | 38.5M |
-| c_motivos | Motivos de situacao cadastral | 65 |
-| c_municipios | Municipios (IBGE) | 5.570 |
-| c_naturezas | Naturezas juridicas | 90 |
-| c_paises | Paises | 260 |
-| c_qualificacoes | Qualificacoes de socio | 70 |
+| c_estabelecimentos | Endereços, situação, CNAE | 38.5M |
+| c_motivos | Motivos de situação cadastral | 65 |
+| c_municipios | Municípios (IBGE) | 5.570 |
+| c_naturezas | Naturezas jurídicas | 90 |
+| c_paises | Países | 260 |
+| c_qualificacoes | Qualificações de sócio | 70 |
 | c_simples | Optantes Simples/MEI | 30.3M |
-| c_socios | Socios das empresas | 18.9M |
+| c_socios | Sócios das empresas | 18.9M |
 
 ## Controle de arquivos processados
 
 O `ControleArquivos` registra cada arquivo processado na tabela
-`etl_arquivoprocessado` (Postgres). Se o arquivo ja foi importado com
+`etl_arquivoprocessado` (Postgres). Se o arquivo já foi importado com
 sucesso, ele e pulado. Use `--force` pra reprocessar.
 
-## Variaveis de ambiente
+## Variáveis de ambiente
 
 Ver `.env.example`. As principais:
 
-- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` — Django padrao
-- `AS400_*` — conexao com o IBM i (obrigatorio mesmo se nao for usar o AS/400 diretamente: o `settings.py` valida no boot)
+- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` — Django padrão
+- `AS400_*` — conexão com o IBM i (obrigatório mesmo se não for usar o AS/400 diretamente: o `settings.py` valida no boot)
 - `AS400_JDBC_JAR` — caminho absoluto pro `jt400.jar`
-- `PG_*` — conexao com o PostgreSQL (`bancocnpj`)
-- `MONGO_*` — conexao com o MongoDB
+- `PG_*` — conexão com o PostgreSQL (`bancocnpj`)
+- `MONGO_*` — conexão com o MongoDB
 
 ## Ambiente
 
-- **Local:** apenas (nao tem producao)
+- **Local:** apenas (não tem produção)
 - **Parquet:** os arquivos ficam fora do projeto (ex:
   `/home/neto/DataSetsTeste/base_cnpj/`)
 
 ## Testes
 
-O projeto **nao tem testes automatizados** (`etl/tests.py` esta vazio). A
-validacao e feita pelos comandos `testar_*` (que conferem as conexoes) e pelo
+O projeto **não tem testes automatizados** (`etl/tests.py` está vazio). A
+validação é feita pelos comandos `testar_*` (que conferem as conexões) e pelo
 `--test N` do `importar_cnpj`, que processa apenas N registros antes da carga real.
 
-## Repositorios relacionados
+## Repositórios relacionados
 
 - [cnpj_interface](https://github.com/antoniorosasse/cnpj_interface) — consulta os dados carregados
