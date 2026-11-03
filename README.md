@@ -6,6 +6,27 @@ em chunks e carrega no PostgreSQL e/ou MongoDB.
 Este repositório **não inclui os dados**. Ele é a ferramenta que popula
 o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antoniorosasse/cnpj_interface).
 
+## Índice
+
+- [Stack](#stack)
+- [Estrutura](#estrutura)
+- [Requisitos de dados](#requisitos-de-dados)
+- [Pré-requisitos](#pré-requisitos)
+- [Como rodar local](#como-rodar-local)
+- [Ordem de execução (primeira carga)](#ordem-de-execução-primeira-carga)
+- [Comandos de ETL](#comandos-de-etl)
+  - [Importar Parquet pra Postgres ou Mongo](#importar-parquet-pra-postgres-ou-mongo)
+  - [Exemplos práticos](#exemplos-práticos)
+  - [Migrar Postgres -> Mongo](#migrar-postgres---mongo)
+  - [Migrar tudo](#migrar-tudo)
+- [Carregar PESSOAS no IBM i (DB2)](#carregar-pessoas-no-ibm-i-db2)
+- [Tabelas de CNPJ suportadas](#tabelas-de-cnpj-suportadas)
+- [Controle de arquivos processados](#controle-de-arquivos-processados)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [Ambiente](#ambiente)
+- [Testes](#testes)
+- [Repositórios relacionados](#repositórios-relacionados)
+
 ## Stack
 
 - Django 5.1.7
