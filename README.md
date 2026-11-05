@@ -19,6 +19,7 @@ o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antonioro
   - [Exemplos práticos](#exemplos-práticos)
   - [Migrar Postgres -> Mongo](#migrar-postgres---mongo)
   - [Migrar tudo](#migrar-tudo)
+  - [Carregar coordenadas de CEP (c_ceps)](#carregar-coordenadas-de-cep-c_ceps)
 - [Carregar PESSOAS no IBM i (DB2)](#carregar-pessoas-no-ibm-i-db2)
 - [Tabelas de CNPJ suportadas](#tabelas-de-cnpj-suportadas)
 - [Controle de arquivos processados](#controle-de-arquivos-processados)
@@ -54,6 +55,7 @@ o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antonioro
     │   │   ├── migrar_para_mongo.py
     │   │   ├── migrar_tudo_para_mongo.py
     │   │   ├── carregar_pessoas_db2.py     # Popula AROSASSE1.PESSOAS no IBM i (DB2)
+    │   │   ├── carregar_ceps.py            # Coordenadas/nomes de CEP -> c_ceps
     │   │   ├── testar_as400.py
     │   │   ├── testar_mongo.py
     │   │   └── testar_postgres.py
@@ -205,6 +207,68 @@ Opções úteis:
     python manage.py migrar_tudo_para_mongo
     python manage.py migrar_tudo_para_mongo --force
 
+## Carregar coordenadas de CEP (c_ceps)
+
+A `c_ceps` guarda coordenada e nome de logradouro por CEP. É o que permite o
+link do Google Maps na página de detalhe do
+[cnpj_interface](https://github.com/antoniorosasse/cnpj_interface). Três
+fontes entram na mesma tabela, cada uma com um papel:
+
+| Fonte | Arquivo | O que traz |
+|---|---|---|
+| `tbl_cep` | `tbl_cep_201805_csv.csv` (cp1252, vírgula) | nome oficial do logradouro, bairro, município, código IBGE |
+| `geocep` | `geocep.csv` (utf-8, `;`) | coordenada **por número** (o loader agrega por CEP) e IBGE |
+| `bq` | `bq-results-*.csv` (utf-8, vírgula) | centroide por CEP; é a fonte que cobre os CEPs novos |
+
+Ordem de execução (importa: o **nome** fica com a fonte que carrega primeiro):
+
+    python manage.py carregar_ceps --criar
+    python manage.py carregar_ceps --fonte tbl_cep --arquivo /caminho/tbl_cep_201805_csv.csv
+    python manage.py carregar_ceps --fonte geocep  --arquivo /caminho/geocep.csv
+    python manage.py carregar_ceps --fonte bq      --arquivo /caminho/bq-results-....csv
+
+Resultado local: **1.256.551 CEPs, 1.256.017 com coordenada**, ~62 s por
+milhão de linhas (COPY em lotes de 20 mil + `ON CONFLICT (cep) DO UPDATE`).
+Cobertura medida em amostra de 774 mil estabelecimentos: **97,5%** com
+coordenada.
+
+A coluna **`generico`** marca o CEP que cobre o município inteiro — o Correios
+não associa logradouro a ele (`tbl_cep` com `logradouro` vazio, ex.: `89669-000`
+Ipira/SC, usado por 809 estabelecimentos em 208 logradouros, a maioria rural).
+São **10.218 CEPs** assim, que alcançam **24% dos estabelecimentos** da base
+(9,3 milhões, em 5.356 municípios). Nesses CEPs a coordenada é o centroide da
+área do município e o pino cai no interior (o `geocep` do `89669-000` até tem
+8 pontos por número, mas todos com `numero=0`); por isso o `cnpj_interface`
+usa o **endereço em texto** quando `generico = true`. Só o `tbl_cep` marca o
+flag — `geocep` e `bq` nunca marcam.
+
+Como o conflito é resolvido:
+
+- `logradouro`, `bairro`, `id_municipio`, `nome_municipio`, `uf` — `COALESCE`:
+  nunca apagam o que já está gravado (daí o `tbl_cep` entrar primeiro);
+- `generico` — `c_ceps.generico OR EXCLUDED.generico`: uma vez marcado, fica
+  marcado (só o `tbl_cep` marca, porque só ele sabe que o CEP não tem
+  logradouro);
+- `latitude`/`longitude` — só são sobrescritas por fonte de prioridade maior
+  ou igual (`PRIORIDADE = {tbl_cep: 1, geocep: 2, bq: 3}`), então a ordem das
+  coordenadas não depende de quem rodou por último. A prioridade saiu de
+  medição em 1M de CEPs comuns: mediana de 64 m (`bq` × `tbl_cep`), 125 m
+  (`bq` × `geocep`) e 169 m (`geocep` × `tbl_cep`); o p99 mostra a cauda de
+  erro de cada fonte (21 km, 637 km e 1449 km) — o `tbl_cep` (2018) tem erro
+  grosseiro em ~1% dos CEPs e por isso fica por último.
+
+Opções:
+
+- `--criar` — roda o DDL (`CREATE TABLE IF NOT EXISTS c_ceps ...` +
+  `ADD COLUMN IF NOT EXISTS generico`, para atualizar tabela antiga) e sai
+- `--fonte {tbl_cep,geocep,bq}` + `--arquivo <csv>` — carga de uma fonte
+- `--batch N` (padrão: 20000) e `--progress N` (padrão: 200000)
+- `--test N` — lê só N linhas (ensaio; grava o que leu)
+
+Sem PostGIS: a coordenada é `numeric(9,6)`, suficiente para o pino no mapa.
+Consulta por raio (`ST_DWithin`) exigiria PostGIS + coluna `geography` numa
+fase futura.
+
 ## Carregar PESSOAS no IBM i (DB2)
 
 O `carregar_pessoas_db2` popula a tabela `AROSASSE1.PESSOAS` do IBM i com dados
@@ -241,6 +305,7 @@ Opções:
 | c_qualificacoes | Qualificações de sócio | 70 |
 | c_simples | Optantes Simples/MEI | 30.3M |
 | c_socios | Sócios das empresas | 18.9M |
+| c_ceps | Coordenada/nome por CEP (fontes tbl_cep, geocep, bq) | 1.26M |
 
 ## Controle de arquivos processados
 

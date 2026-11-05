@@ -34,7 +34,8 @@ neste workspace. Mantenha-o enxuto e versionado no git.
 - `etl/processadores/`: `cnpj_processor.py` (le Parquet em chunks com
   pandas/pyarrow e grava em lote), `controle_arquivos.py` (marca arquivos ja
   processados).
-- `etl/management/commands/`: `importar_cnpj`, `carregar_pessoas_db2`,
+- `etl/management/commands/`: `importar_cnpj`, `carregar_ceps`,
+  `carregar_pessoas_db2`,
   `migrar_para_mongo`, `migrar_postgres_para_mongo`, `migrar_tudo_para_mongo`,
   `testar_as400`, `testar_mongo`, `testar_postgres`.
 - `carga_dados/settings.py` **exige** `.env` completo (`SECRET_KEY`, `AS400_*`,
@@ -57,6 +58,14 @@ neste workspace. Mantenha-o enxuto e versionado no git.
     # Replica Postgres -> Mongo (usado pelo chat do cnpj)
     python manage.py migrar_tudo_para_mongo
 
+    # CEP: cria c_ceps e carrega coordenada/nome do logradouro
+    # (ordem importa para o nome: tbl_cep -> geocep -> bq)
+    # o tbl_cep tambem marca c_ceps.generico (CEP que cobre o municipio inteiro)
+    python manage.py carregar_ceps --criar
+    python manage.py carregar_ceps --fonte tbl_cep --arquivo ~/DataSetsTeste/Ceps/tbl_cep_201805_csv.csv
+    python manage.py carregar_ceps --fonte geocep  --arquivo ~/DataSetsTeste/Ceps/geocep.csv
+    python manage.py carregar_ceps --fonte bq      --arquivo ~/DataSetsTeste/Ceps/bq-results-*.csv
+
 - Use sempre o Python do `venv/`. Nao altere `requirements.txt` sem pedir.
 - `etl/tests.py` esta vazio: a validacao pratica e `--test` / `--quantidade 100`
   em dev, com o resultado relatado.
@@ -70,6 +79,17 @@ neste workspace. Mantenha-o enxuto e versionado no git.
   `PESSOAS` fica limitada a **500.000 linhas** (IDs 1.770.681-2.270.680). Nao
   liberar `CEPSGEN`.
 - `cnpj_dv` e **texto** com `zfill(2)` (o DV `05` nao pode virar `5`).
+- `c_ceps` (coordenada/nome por CEP) e idempotente: recarregar e rodar o
+  comando de novo (nao precisa `TRUNCATE`). A **coordenada** nao depende da
+  ordem (`PRIORIDADE = tbl_cep 1, geocep 2, bq 3`, medida em 1M de CEPs); o
+  **nome** fica com a fonte carregada primeiro, por isso a ordem
+  `tbl_cep -> geocep -> bq`. `geocep` tem uma linha por numero do endereco e e
+  agregada por CEP no fim da carga.
+- `c_ceps.generico` marca o CEP que cobre o **municipio inteiro** (Correios sem
+  logradouro, ex.: `89669-000` Ipira/SC). Sao 10.218 CEPs que alcancam 24% dos
+  estabelecimentos; neles a coordenada e o centroide da area do municipio (cai
+  no interior) e o `cnpj_interface` usa o endereco em texto. So o `tbl_cep`
+  marca o flag (`OR` no conflito: marcado nunca desmarca).
 - `importar_cnpj` e idempotente por `--conflict`; `etl_arquivoprocessado` evita
   reprocessar arquivo. Nao burlar esse controle (`--force` so com motivo).
 - Nunca commitar `.env`, `lib/jt400.jar` (driver IBM), `dumps/` ou `backups/`.
