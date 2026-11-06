@@ -34,8 +34,8 @@ neste workspace. Mantenha-o enxuto e versionado no git.
 - `etl/processadores/`: `cnpj_processor.py` (le Parquet em chunks com
   pandas/pyarrow e grava em lote), `controle_arquivos.py` (marca arquivos ja
   processados).
-- `etl/management/commands/`: `importar_cnpj`, `carregar_ceps`,
-  `carregar_pessoas_db2`,
+- `etl/management/commands/`: `importar_cnpj`, `carregar_ceps`, `carregar_municipios`,
+  `contar_estab_por_cep`, `contar_estab_por_cep_situacao`, `carregar_pessoas_db2`,
   `migrar_para_mongo`, `migrar_postgres_para_mongo`, `migrar_tudo_para_mongo`,
   `testar_as400`, `testar_mongo`, `testar_postgres`.
 - `carga_dados/settings.py` **exige** `.env` completo (`SECRET_KEY`, `AS400_*`,
@@ -65,6 +65,21 @@ neste workspace. Mantenha-o enxuto e versionado no git.
     python manage.py carregar_ceps --fonte tbl_cep --arquivo ~/DataSetsTeste/Ceps/tbl_cep_201805_csv.csv
     python manage.py carregar_ceps --fonte geocep  --arquivo ~/DataSetsTeste/Ceps/geocep.csv
     python manage.py carregar_ceps --fonte bq      --arquivo ~/DataSetsTeste/Ceps/bq-results-*.csv
+
+    # Municipios: cria c_municipios_geo (TOM <-> IBGE <-> UF + centroide)
+    # espinha = c_municipios (todo TOM do CNPJ tem linha); centroide = c_ceps
+    # fallback de uf/centroide = c_estabelecimentos (usa o indice de municipio)
+    python manage.py carregar_municipios --criar --exportar /tmp/municipios_geo.csv
+
+    # Contagem por CEP: cria/atualiza c_ceps_estab (cep, n_matrizes, n_total)
+    # da o total e o "Pagina X de Y" da /proximidade/ do cnpj_interface.
+    # Rodar DEPOIS do importar_cnpj: GROUP BY em 38,5M (~90 s) + troca (~30 s).
+    python manage.py contar_estab_por_cep --criar --exportar /tmp/ceps_estab.csv
+
+    # Contagem por CEP e situacao: c_ceps_estab_sit (cep, cd_sit_cadastro,
+    # n_matrizes, n_total). Mesmo total/Pagina X de Y, mas com o filtro de
+    # situacao ligado. Rodar depois do contar_estab_por_cep (~154 s).
+    python manage.py contar_estab_por_cep_situacao --criar --exportar /tmp/ceps_estab_sit.csv
 
 - Use sempre o Python do `venv/`. Nao altere `requirements.txt` sem pedir.
 - `etl/tests.py` esta vazio: a validacao pratica e `--test` / `--quantidade 100`

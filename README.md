@@ -56,6 +56,9 @@ o banco `bancocnpj` consumido pelo [cnpj_interface](https://github.com/antonioro
     │   │   ├── migrar_tudo_para_mongo.py
     │   │   ├── carregar_pessoas_db2.py     # Popula AROSASSE1.PESSOAS no IBM i (DB2)
     │   │   ├── carregar_ceps.py            # Coordenadas/nomes de CEP -> c_ceps
+    │   │   ├── carregar_municipios.py      # TOM/IBGE/UF + centroide -> c_municipios_geo
+    │   │   ├── contar_estab_por_cep.py    # Estabelecimentos por CEP -> c_ceps_estab
+    │   │   ├── contar_estab_por_cep_situacao.py  # Por CEP + situacao -> c_ceps_estab_sit
     │   │   ├── testar_as400.py
     │   │   ├── testar_mongo.py
     │   │   └── testar_postgres.py
@@ -242,8 +245,93 @@ São **10.218 CEPs** assim, que alcançam **24% dos estabelecimentos** da base
 usa o **endereço em texto** quando `generico = true`. Só o `tbl_cep` marca o
 flag — `geocep` e `bq` nunca marcam.
 
-Como o conflito é resolvido:
+### Municípios (`carregar_municipios` → `c_municipios_geo`)
 
+Tabela nova (não altera `c_municipios`, que continua sendo a lista da RFB), usada
+pelo `cnpj_interface` no filtro de **cidade** e na página `/proximidade/`:
+
+| Coluna | Origem |
+|---|---|
+| `cd_municipio` | TOM — casa com `c_estabelecimentos.municipio` |
+| `cd_ibge` | `municipios.csv` (IBGE 2025) — casa com `c_ceps.id_municipio` |
+| `nome` | nome do IBGE (com acento), para exibir |
+| `nome_tom` | nome da RFB (maiúsculo), para casar texto |
+| `uf` | `municipios.csv`; fallback em `c_estabelecimentos` |
+| `latitude`/`longitude` | média das coordenadas dos CEPs do município; fallback pelo CEP das empresas |
+| `n_ceps` | quantos CEPs entraram na média |
+
+    python manage.py carregar_municipios --criar --exportar /tmp/municipios_geo.csv
+
+O CSV do IBGE (`~/DataSetsTeste/municipios.csv`, latin-1, `;`) traz
+`TOM;IBGE;nome_tom;nome_ibge;UF`. A espinha é a `c_municipios`: todo TOM do CNPJ
+tem linha, inclusive o **1182 (Boa Esperança do Norte/MT)**, que ainda não está
+no CSV do IBGE e não tem CEP — ele entra com `cd_ibge` nulo e `uf` vinda de
+`c_estabelecimentos`. Saída esperada: **5.572 linhas, 5.571 com IBGE, 5.570 com
+centroide, 1 sem IBGE** (mais o TOM 9707 `EXTERIOR`, também sem centroide).
+
+`c_ceps.id_municipio` é **IBGE (7 dígitos)** e `c_estabelecimentos.municipio` é
+**TOM** — a tabela é a ponte entre os dois. Sem ela, o filtro de cidade e a busca
+por proximidade não funcionam.
+
+### Contagem por CEP (`contar_estab_por_cep` → `c_ceps_estab`)
+
+Tabela agregada que dá o **total** e o **"Página X de Y"** da `/proximidade/` do
+`cnpj_interface`:
+
+| Coluna | Conteúdo |
+|---|---|
+| `cep` | 8 dígitos, sem hífen (PK) |
+| `n_matrizes` | estabelecimentos com `cd_matriz_filial = 1` |
+| `n_total` | matrizes + filiais |
+
+    python manage.py contar_estab_por_cep --criar --exportar /tmp/ceps_estab.csv
+
+Roda **depois** do `importar_cnpj` (é um `GROUP BY cep` em 38,5 M de linhas:
+~90 s de agregação + ~30 s de troca, localmente). Saída local: **1.184.921 CEPs,
+36.755.480 matrizes, 38.352.894 estabelecimentos, ~105 MB**. A troca é feita
+numa transação (tabela temporária → `DELETE` + `INSERT`), então a tela nunca vê a
+tabela pela metade; o `VACUUM ANALYZE` no fim devolve o espaço da recarga.
+Estabelecimento sem CEP (149.940 em 2026-11) não entra — não há chave para somar.
+
+**Por que existe**: `COUNT` dos estabelecimentos dentro de um raio custa 5-15 s
+(bitmap scan em 25 GB); somar o agregado no raio custa 30-60 ms. Sem a tabela a
+tela continua funcionando, mas mostra só "Página X".
+
+### Contagem por CEP e situação (`contar_estab_por_cep_situacao` → `c_ceps_estab_sit`)
+
+Mesma ideia, com uma linha por **CEP e situação cadastral**. É o que permite o
+`/proximidade/` do `cnpj_interface` mostrar o total e o "Página X de Y" quando o
+usuário filtra por situação (`situacao=` na querystring):
+
+| Coluna | Conteúdo |
+|---|---|
+| `cep` | 8 dígitos, sem hífen |
+| `cd_sit_cadastro` | 1 nula, 2 ativa, 3 suspensa, 4 inapta, 8 baixada |
+| `n_matrizes` | estabelecimentos com `cd_matriz_filial = 1` |
+| `n_total` | matrizes + filiais |
+
+`PRIMARY KEY (cep, cd_sit_cadastro)`.
+
+    python manage.py contar_estab_por_cep_situacao --criar --exportar /tmp/ceps_estab_sit.csv
+
+Roda **depois** do `contar_estab_por_cep`. Saída local (2026-11): **2.061.218
+pares, 36.755.480 matrizes, 38.352.894 estabelecimentos, 183 MB**, em ~154 s
+(agregação + troca). Por situação: 1 → 109.217; 2 → 28.072.584; 3 → 245.176;
+4 → 9.925.917. A soma das situações é igual ao total de `c_ceps_estab`, e é isso
+que a tela usa como conferência.
+
+Não substitui `c_ceps_estab`: a tela soma `c_ceps_estab` quando não há filtro
+(1,18 M linhas) e `c_ceps_estab_sit` quando há (2,06 M linhas, 1 busca no índice
+por CEP + situação).
+
+Dos 1.184.921 CEPs, **726 estão fora do padrão de 8 dígitos** em
+`c_estabelecimentos` (perda de zero à esquerda, ex.: `1007000` em vez de
+`01007000`, mais um `0` com 2.910 estabelecimentos). Eles ficam como estão de
+propósito: o join da busca por proximidade é `e.cep = c.cep` e `c_ceps` só tem 8
+dígitos, então normalizar aqui inflaria o total com linhas que a tela nunca
+retorna. Corrigir os 726 na origem (ETL) é uma pendência separada.
+
+Como o conflito é resolvido:
 - `logradouro`, `bairro`, `id_municipio`, `nome_municipio`, `uf` — `COALESCE`:
   nunca apagam o que já está gravado (daí o `tbl_cep` entrar primeiro);
 - `generico` — `c_ceps.generico OR EXCLUDED.generico`: uma vez marcado, fica
