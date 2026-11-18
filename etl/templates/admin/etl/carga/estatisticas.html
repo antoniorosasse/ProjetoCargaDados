@@ -1,0 +1,275 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Estatísticas das cargas | {{ block.super }}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 24px; }
+  .card { flex: 1 1 170px; background: var(--body-bg); border: 1px solid var(--hairline-color);
+          border-radius: 6px; padding: 10px 14px; }
+  .card .rotulo { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; opacity: .65; }
+  .card .valor { font-size: 22px; font-weight: 600; line-height: 1.3; }
+  .card .detalhe { font-size: 11px; opacity: .65; }
+  .tabela { width: 100%; border-collapse: collapse; }
+  .tabela th, .tabela td { padding: 7px 10px; border-bottom: 1px solid var(--hairline-color);
+                           text-align: left; white-space: nowrap; }
+  .tabela th { background: var(--darkened-bg); font-size: 12px; font-weight: 600; }
+  .tabela td.num, .tabela th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tabela tbody tr:hover { background: var(--selected-bg); }
+  .tabela .acum { background: var(--darkened-bg); }
+  .subtitulo { margin: 26px 0 8px; font-size: 15px; font-weight: 600; }
+  .dica { font-size: 12px; opacity: .7; margin-bottom: 12px; }
+  .filtro { margin: 14px 0; font-size: 13px; }
+  .filtro a { margin-right: 14px; text-decoration: none; }
+  .filtro a.ativo { font-weight: 700; text-decoration: underline; }
+  .vazio { padding: 18px; opacity: .7; }
+  .andamento { border-left: 4px solid #e8a33d; background: var(--darkened-bg);
+               padding: 10px 14px 4px; margin: 0 0 20px; }
+  .andamento h2 { margin: 0 0 4px; font-size: 15px; }
+</style>
+{% endblock %}
+
+{% block extrahead %}{{ block.super }}
+{% if carga_aberta %}<meta http-equiv="refresh" content="30">{% endif %}
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Início</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:etl_carga_changelist' %}">Cargas</a>
+  &rsaquo; Estatísticas
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  <p style="margin:0 0 12px">
+    <a href="{% url 'admin:etl_carga_executar' %}">▶ Executar carga</a>
+    &nbsp;|&nbsp;
+    <a href="{% url 'admin:etl_carga_changelist' %}">Todas as cargas</a>
+  </p>
+
+  {% if carga_aberta %}
+  <div class="andamento">
+    <h2>⏳ Carga em andamento — {{ carga_aberta.rotulo }}</h2>
+    <p class="dica" style="margin:0 0 8px">
+      Iniciada em {{ carga_aberta.iniciado_em|date:"d/m/Y H:i" }}, rodando há
+      {{ andamento_total }} ({{ carga_aberta.linhas_carregadas|default_if_none:0 }}
+      linhas registradas até agora). Esta página se atualiza a cada 30 segundos.
+    </p>
+    {% if andamento %}
+    <table class="tabela">
+      <thead>
+        <tr>
+          <th>Etapa</th>
+          <th>Tabela</th>
+          <th>Detalhe</th>
+          <th class="num">Arquivos</th>
+          <th class="num">Rodando há</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in andamento %}
+        <tr>
+          <td>{{ item.etapa }}</td>
+          <td>{{ item.tabela }}</td>
+          <td>{{ item.detalhe|default:"-" }}</td>
+          <td class="num">{% if item.arquivos %}{{ item.arquivos }}{% else %}-{% endif %}</td>
+          <td class="num">{{ item.tempo }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="dica">Nenhuma etapa aberta agora — o processo está entre fases.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if not totais.cargas %}
+    <p class="vazio">Nenhuma carga registrada ainda. Rode
+      <code>manage.py importar_estatisticas_log</code> para importar o histórico
+      existente, ou execute <code>carregar_base_cnpj</code> / <code>importar_cnpj</code>
+      (as próximas cargas gravam sozinhas).</p>
+  {% else %}
+
+  <div class="cards">
+    <div class="card">
+      <div class="rotulo">Cargas</div>
+      <div class="valor">{{ totais.cargas }}</div>
+      <div class="detalhe">no histórico</div>
+    </div>
+    <div class="card">
+      <div class="rotulo">Linhas acumuladas</div>
+      <div class="valor">{{ totais.linhas }}</div>
+      <div class="detalhe">somadas entre as cargas</div>
+    </div>
+    <div class="card">
+      <div class="rotulo">Tempo de carga</div>
+      <div class="valor">{{ totais.tempo_carga }}</div>
+      <div class="detalhe">{{ totais.velocidade }} na média</div>
+    </div>
+    <div class="card">
+      <div class="rotulo">Tempo de índices</div>
+      <div class="valor">{{ totais.tempo_indices }}</div>
+      <div class="detalhe">{{ totais.indices }} índices criados</div>
+    </div>
+    <div class="card">
+      <div class="rotulo">Tempo total</div>
+      <div class="valor">{{ totais.tempo_total }}</div>
+      <div class="detalhe">inclui contadores e DDL</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="filtro">
+    <strong>Agrupar por período:</strong>
+    {% for chave, nome in periodos %}
+      <a href="?periodo={{ chave }}" class="{% if chave == periodo %}ativo{% endif %}">{{ nome }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="module">
+    <table class="tabela">
+      <thead>
+        <tr>
+          <th>Período</th>
+          <th class="num">Cargas</th>
+          <th class="num">Linhas</th>
+          <th class="num">Tempo de carga</th>
+          <th class="num">Tempo de índices</th>
+          <th class="num">Tempo total</th>
+          <th class="num">Velocidade</th>
+          <th class="num acum">Acum. cargas</th>
+          <th class="num acum">Acum. linhas</th>
+          <th class="num acum">Acum. tempo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for grupo in grupos %}
+        <tr>
+          <td>{{ grupo.rotulo }}</td>
+          <td class="num">{{ grupo.cargas }}</td>
+          <td class="num">{{ grupo.linhas_fmt }}</td>
+          <td class="num">{{ grupo.tempo_carga_fmt }}</td>
+          <td class="num">{{ grupo.tempo_indices_fmt }}</td>
+          <td class="num">{{ grupo.tempo_total_fmt }}</td>
+          <td class="num">{{ grupo.velocidade_fmt }}</td>
+          <td class="num acum">{{ grupo.cargas_acumuladas }}</td>
+          <td class="num acum">{{ grupo.linhas_acumuladas_fmt }}</td>
+          <td class="num acum">{{ grupo.tempo_acumulado_fmt }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="10" class="vazio">Sem cargas no período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="dica">As colunas <em>Acum.</em> somam todas as cargas até aquele período
+    (mais antigo → mais recente).</p>
+
+  <h2 class="subtitulo">Cargas registradas</h2>
+  <div class="module">
+    <table class="tabela">
+      <thead>
+        <tr>
+          <th>Rótulo</th>
+          <th>Início</th>
+          <th>Status</th>
+          <th class="num">Duração</th>
+          <th class="num">Linhas</th>
+          <th class="num">Tempo de carga</th>
+          <th class="num">Tempo de índices</th>
+          <th class="num">Contadores</th>
+          <th class="num">Velocidade</th>
+          <th class="num">Etapas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for carga in cargas %}
+        <tr>
+          <td><a href="{% url 'admin:etl_carga_change' carga.obj.pk %}">{{ carga.rotulo }}</a></td>
+          <td>{{ carga.iniciado_em|date:"d/m/Y H:i" }}</td>
+          <td>{{ carga.status }}</td>
+          <td class="num">{{ carga.duracao }}</td>
+          <td class="num">{{ carga.linhas }}</td>
+          <td class="num">{{ carga.tempo_carga }}</td>
+          <td class="num">{{ carga.tempo_indices }}</td>
+          <td class="num">{{ carga.tempo_contadores }}</td>
+          <td class="num">{{ carga.velocidade }}</td>
+          <td class="num">{{ carga.n_etapas }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="10" class="vazio">Nenhuma carga registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if ultima %}
+  <h2 class="subtitulo">Última carga — {{ ultima.rotulo }}
+    ({{ ultima.iniciado_em|date:"d/m/Y H:i" }})</h2>
+  <div class="module">
+    <table class="tabela">
+      <thead>
+        <tr>
+          <th>Tabela</th>
+          <th class="num">Linhas</th>
+          <th class="num">Tempo de carga</th>
+          <th class="num">Velocidade</th>
+          <th class="num">Índices</th>
+          <th class="num">Tempo de índices</th>
+          <th class="num">Contadores</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in resumo_tabelas %}
+        <tr>
+          <td>{{ linha.tabela }}</td>
+          <td class="num">{{ linha.linhas_fmt }}</td>
+          <td class="num">{{ linha.tempo_carga_fmt }}</td>
+          <td class="num">{{ linha.velocidade }}</td>
+          <td class="num">{{ linha.n_indices }}</td>
+          <td class="num">{{ linha.tempo_indices_fmt }}</td>
+          <td class="num">{{ linha.tempo_contador_fmt }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="vazio">Sem etapas registradas nesta carga.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if ranking_indices %}
+  <h2 class="subtitulo">Índices mais caros (histórico acumulado)</h2>
+  <div class="module">
+    <table class="tabela">
+      <thead>
+        <tr>
+          <th>Tabela</th>
+          <th>Índice</th>
+          <th class="num">Tempo total</th>
+          <th class="num">Cargas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in ranking_indices %}
+        <tr>
+          <td>{{ item.tabela }}</td>
+          <td>{{ item.detalhe }}</td>
+          <td class="num">{{ item.duracao_fmt }}</td>
+          <td class="num">{{ item.vezes }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+

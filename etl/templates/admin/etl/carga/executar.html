@@ -1,0 +1,397 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrahead %}
+  {{ block.super }}
+  {% if estado and estado.ativo %}<meta http-equiv="refresh" content="15">{% endif %}
+{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Início</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url 'admin:etl_carga_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; Executar carga
+  </div>
+{% endblock %}
+
+{% block content %}
+  <h1>Executar carga da base CNPJ</h1>
+
+  <p style="max-width:70em">
+    O admin não carrega nada: ele chama
+    <code>manage.py carregar_base_cnpj</code> em um processo separado, com a
+    saída gravada em arquivo. A carga continua rodando mesmo se você fechar o
+    navegador, e o andamento aparece em
+    <a href="{% url 'admin:etl_carga_estatisticas' %}">Estatísticas de carga</a>.
+  </p>
+
+  {% if estado %}
+    <div class="module" style="margin-bottom:20px">
+      <h2>{% if estado.ativo %}⏳ Execução em andamento{% else %}Última execução disparada{% endif %}</h2>
+      <table style="width:auto">
+        <tr><th>PID</th><td>{{ estado.pid }}{% if not estado.ativo %} (encerrado){% endif %}</td></tr>
+        <tr><th>Iniciada em</th><td>{{ estado.iniciado_em }}</td></tr>
+        <tr><th>Pasta</th><td><code>{{ estado.pasta }}</code></td></tr>
+        <tr><th>Fase</th><td>{{ estado.fase }}</td></tr>
+        <tr><th>Rótulo</th><td>{{ estado.rotulo }}</td></tr>
+        <tr><th>Tabelas</th><td>{{ estado.tabelas|join:", "|default:"todas" }}</td></tr>
+        <tr><th>Arquivos por tabela</th><td>{% if estado.limit %}{{ estado.limit }}{% else %}todos{% endif %}</td></tr>
+        <tr><th>Log</th><td><code>{{ estado.log }}</code></td></tr>
+        <tr><th>Comando</th><td><code style="font-size:11px">{{ estado.comando }}</code></td></tr>
+      </table>
+
+      {% if estado.ativo %}
+        <form method="post" style="padding:10px 14px">{% csrf_token %}
+          <input type="hidden" name="acao" value="parar">
+          <button type="submit" class="button"
+                  onclick="return confirm('Encerrar a carga em execução?')">
+            Parar carga
+          </button>
+        </form>
+      {% endif %}
+
+      <div style="padding:10px 14px">
+        <strong>Saída (últimas linhas)</strong>
+        <pre style="max-height:320px;overflow:auto;background:#f8f8f8;border:1px solid #ddd;padding:8px;font-size:11px">{% for linha in estado.log_linhas %}{{ linha }}
+{% empty %}(log vazio — o processo ainda não escreveu nada){% endfor %}</pre>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="module">
+    <h2>Nova execução</h2>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="acao" value="disparar">
+      <div style="padding:10px 14px">
+        <div class="form-row">
+          <label for="pasta">Pasta com os arquivos (.zip ou .parquet):</label>
+          <input type="text" name="pasta" id="pasta" size="70" list="pastas"
+                 value="{{ pasta_sel }}" required>
+          <datalist id="pastas">
+            {% for pasta in pastas %}<option value="{{ pasta }}">{% endfor %}
+          </datalist>
+          <p class="help">Raízes liberadas: {% for raiz in raizes %}<code>{{ raiz }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+          <p class="help">
+            <a href="#" onclick="location.search='?pasta='+encodeURIComponent(document.getElementById('pasta').value);return false">conferir arquivos da pasta</a>
+            {% if arquivos %}
+              — encontrados:
+              {% for tabela, quantidade in arquivos.items %}<code>{{ tabela }}: {{ quantidade }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}
+            {% elif pasta_sel %}
+              — nenhum .zip/.parquet reconhecido em <code>{{ pasta_sel }}</code>
+            {% endif %}
+          </p>
+        </div>
+
+        <div class="form-row">
+          <label for="fase">Fase:</label>
+          <select name="fase" id="fase">
+            <option value="tudo">tudo — ddl, truncar, carregar e índices (recarga completa)</option>
+            <option value="ddl">ddl — salva e remove os índices</option>
+            <option value="truncar">truncar — TRUNCATE das tabelas (não confere arquivos)</option>
+            <option value="carregar">carregar — só importa os arquivos</option>
+            <option value="indices">indices — recria índices e roda ANALYZE</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label>Lote (rótulo):</label>
+          <input type="text" name="rotulo" size="20" placeholder="2026-11">
+          <span class="help">Em branco usa o nome da pasta.</span>
+        </div>
+
+        <div class="form-row">
+          <label>Tabelas:</label>
+          <div style="display:inline-block;vertical-align:top">
+            {% for tabela in tabelas %}
+              <div>
+                <input type="checkbox" name="tabelas" value="{{ tabela }}"
+                       id="tab_{{ tabela }}"
+                       data-grupo="{% if tabela in tabelas_grandes %}grande{% else %}dominio{% endif %}" checked>
+                <label for="tab_{{ tabela }}" style="display:inline;font-weight:normal">{{ tabela }}</label>
+                <span class="help" style="font-size:10px">[{% if tabela in tabelas_grandes %}grande{% else %}domínio{% endif %}]</span>
+                {% if arquivos %}
+                  {% for nome, quantidade in arquivos.items %}{% if nome == tabela %}
+                    <span class="help" style="font-size:11px">({{ quantidade }} arquivo{{ quantidade|pluralize }})</span>
+                  {% endif %}{% endfor %}
+                {% endif %}
+                <a href="#" style="font-size:11px;margin-left:6px"
+                   onclick="marcarSomente('tab_{{ tabela }}');return false">só esta</a>
+              </div>
+            {% endfor %}
+            <p style="margin:6px 0 0">
+              <a href="#" style="font-size:11px"
+                 onclick="marcarTodas(true);return false">marcar todas</a>
+              &nbsp;|&nbsp;
+              <a href="#" style="font-size:11px"
+                 onclick="marcarTodas(false);return false">desmarcar todas</a>
+              &nbsp;|&nbsp;
+              <a href="#" style="font-size:11px"
+                 onclick="marcarGrupo('grande');return false">só as grandes</a>
+              &nbsp;|&nbsp;
+              <a href="#" style="font-size:11px"
+                 onclick="marcarGrupo('dominio');return false">só os domínios</a>
+            </p>
+            <p class="help" style="margin:4px 0 0">
+              As <strong>10 tabelas</strong> da RFB são carregáveis (a ordem de
+              dependência é domínios &rarr; grandes). Na fase <em>tudo</em> a
+              tabela só é truncada se existir arquivo dela na pasta.
+            </p>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="limit">Arquivos por tabela:</label>
+          <input type="number" name="limit" id="limit" value="0" min="0" style="width:6em">
+          <p class="help">
+            <strong>0 = todos</strong> (carga completa). Para testar escolha
+            <strong>1</strong> e uma única tabela: em segundos/minutos você vê a
+            carga inteira passar (DDL, TRUNCATE, carga, índices, ANALYZE).
+            As 6 tabelas de domínio têm <strong>1 arquivo cada</strong>: com
+            <code>limit 0</code> nelas a recarga é completa e nada fica parcial.
+            Nas 4 grandes, use <code>limit</code> só para ensaio e rode a carga
+            completa depois.
+          </p>
+        </div>
+
+        <div class="form-row">
+          <label>batch / workers:</label>
+          <input type="number" name="batch" value="50000" min="1000" step="1000" style="width:9em">
+          <input type="number" name="workers" value="4" min="1" max="16" style="width:5em">
+        </div>
+
+        <div class="form-row">
+          <label for="confirmacao">Confirmação:</label>
+          <input type="text" name="confirmacao" id="confirmacao" size="12"
+                 placeholder="CARREGAR">
+          <p class="help">
+            Obrigatório para <code>tudo</code>, <code>ddl</code> e
+            <code>truncar</code>: essas fases apagam dados/índices da
+            <code>bancocnpj</code>. Digite <code>CARREGAR</code>.
+          </p>
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <input type="submit" value="Iniciar carga" class="default">
+      </div>
+    </form>
+  </div>
+
+  <p class="help">
+    Logs em <code>{{ log_dir }}</code>. O DDL dos índices é salvo em
+    <code>{{ ddl_padrao }}</code> antes de qualquer remoção; para um subconjunto
+    de tabelas o arquivo ganha sufixo (ex.: <code>ddl_carga_paises.sql</code>),
+    então um teste por tabela não apaga o DDL da recarga completa.
+  </p>
+  <hr style="margin:34px 0">
+
+  <h1>Publicar em produção (VPS)</h1>
+
+  <p style="max-width:70em">
+    Leva a base daqui para a <code>bancocnpj</code> da VPS <strong>uma tabela
+    por vez</strong>: <code>pg_dump -Fc</code> de cada tabela no SSD local,
+    <code>rsync</code> retomável para <code>~/{{ publicacao_remoto }}/dumps/&lt;rótulo&gt;/</code>
+    e, na VPS, drop de índices &rarr; <code>TRUNCATE</code> &rarr;
+    <code>pg_restore --data-only</code> &rarr; recriação dos índices. Nada é
+    apagado daqui e as tabelas não marcadas ficam intactas em produção.
+  </p>
+
+  {% if not publicacao_ssh %}
+    <p class="errornote">
+      <code>PUBLICACAO_SSH</code> está vazio no <code>.env</code>: a publicação
+      aparece desabilitada. Configure o acesso SSH à VPS para habilitar.
+    </p>
+  {% endif %}
+
+  <div class="module" style="margin-bottom:18px">
+    <h2>Configuração</h2>
+    <table style="width:auto">
+      <tr><th>SSH</th><td><code>{{ publicacao_ssh|default:"(não configurado)" }}</code></td></tr>
+      <tr><th>Serviço</th><td><code>{{ publicacao_servico }}.service</code> (parado no restore)</td></tr>
+      <tr><th>Dumps locais</th><td><code>{{ publicacao_dumps }}</code></td></tr>
+      <tr><th>Jobs</th><td>{{ publicacao_jobs }}</td></tr>
+    </table>
+    <form method="post" style="padding:8px 14px">{% csrf_token %}
+      <input type="hidden" name="acao" value="checar_prod">
+      <button type="submit" class="button">Checar servidor</button>
+      <span class="help">SSH, versão do pg_restore, serviço, espaço em disco e <code>.pgpass</code>.</span>
+    </form>
+    {% if checagem %}
+      <pre style="margin:0 14px 12px;background:#f8f8f8;border:1px solid #ddd;padding:8px;font-size:11px">{% for linha in checagem %}{{ linha }}
+{% endfor %}</pre>
+    {% endif %}
+  </div>
+
+
+  {% if publicacao %}
+    <div class="module" style="margin-bottom:18px">
+      <h2>{% if publicacao.ativo %}⏳ Publicação em andamento{% else %}Última publicação disparada{% endif %}</h2>
+      <table style="width:auto">
+        <tr><th>PID</th><td>{{ publicacao.pid }}{% if not publicacao.ativo %} (encerrado){% endif %}</td></tr>
+        <tr><th>Iniciada em</th><td>{{ publicacao.iniciado_em }}</td></tr>
+        <tr><th>Rótulo</th><td>{{ publicacao.rotulo }}</td></tr>
+        <tr><th>Fase</th><td>{{ publicacao.fase }}</td></tr>
+        <tr><th>Tabelas</th><td>{{ publicacao.tabelas|join:", "|default:"todas" }}</td></tr>
+        <tr><th>Serviço</th><td>{% if publicacao.parar_servico %}para no restore{% else %}não para{% endif %} &middot;
+          {% if publicacao.backup %}backup de rollback{% else %}sem backup{% endif %}</td></tr>
+        <tr><th>Log</th><td><code>{{ publicacao.log }}</code></td></tr>
+      </table>
+
+      {% if publicacao.ativo %}
+        <form method="post" style="padding:10px 14px">{% csrf_token %}
+          <input type="hidden" name="acao" value="parar_publicacao">
+          <button type="submit" class="button"
+                  onclick="return confirm('Encerrar a publicação em execução?')">
+            Parar publicação
+          </button>
+        </form>
+      {% endif %}
+
+      <div style="padding:10px 14px">
+        <strong>Saída (últimas linhas)</strong>
+        <pre style="max-height:320px;overflow:auto;background:#f8f8f8;border:1px solid #ddd;padding:8px;font-size:11px">{% for linha in publicacao.log_linhas %}{{ linha }}
+{% empty %}(log vazio — o processo ainda não escreveu nada){% endfor %}</pre>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="module">
+    <h2>Nova publicação</h2>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="acao" value="publicar">
+      <div style="padding:10px 14px">
+        <div class="form-row">
+          <label for="rotulo_pub">Rótulo do lote:</label>
+          <input type="text" name="rotulo_pub" id="rotulo_pub" size="12"
+                 value="2026-11" required>
+          <span class="help">Nome da pasta dos dumps (<code>{{ publicacao_dumps }}/&lt;rótulo&gt;</code>).</span>
+        </div>
+
+        <div class="form-row">
+          <label for="fase_pub">Fase:</label>
+          <select name="fase_pub" id="fase_pub">
+            <option value="tudo">tudo (dump, envio, restore e índices)</option>
+            <option value="exportar">exportar (só pg_dump local)</option>
+            <option value="enviar">enviar (só rsync)</option>
+            <option value="restaurar">restaurar (drop, truncate, restore)</option>
+            <option value="indices">indices (recria índices, ANALYZE, religa)</option>
+            <option value="finalizar">finalizar (estatísticas e religa o site)</option>
+            <option value="status">status (só consulta)</option>
+          </select>
+          <span class="help">Cada fase pode rodar sozinha; <code>tudo</code> encadeia as quatro.</span>
+        </div>
+      </div>
+
+      <div style="padding:0 14px 10px">
+        <div class="form-row">
+          <label>Tabelas:</label>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 18px">
+            {% for tabela in tabelas_prod %}
+              <label style="font-weight:normal;white-space:nowrap">
+                <input type="checkbox" name="tabelas_prod" value="{{ tabela }}"
+                       data-grupo="{% if tabela in tabelas_prod_dominio %}dominio{% else %}grande{% endif %}">
+                <code>{{ tabela }}</code>
+              </label>
+            {% endfor %}
+            {% for tabela in tabelas_prod_derivadas %}
+              <label style="font-weight:normal;white-space:nowrap">
+                <input type="checkbox" name="tabelas_prod" value="{{ tabela }}"
+                       data-grupo="derivada">
+                <code>{{ tabela }}</code>
+              </label>
+            {% endfor %}
+          </div>
+          <p style="margin:6px 0 0">
+            <a href="#" style="font-size:11px" onclick="marcarProdTodas(true);return false">marcar todas</a>
+            &nbsp;|&nbsp;
+            <a href="#" style="font-size:11px" onclick="marcarProdTodas(false);return false">desmarcar todas</a>
+            &nbsp;|&nbsp;
+            <a href="#" style="font-size:11px" onclick="marcarProdGrupo('grande');return false">só as grandes</a>
+            &nbsp;|&nbsp;
+            <a href="#" style="font-size:11px" onclick="marcarProdGrupo('dominio');return false">só os domínios</a>
+          </p>
+          <p class="help" style="margin:4px 0 0">
+            O <code>pg_dump</code> sai da base <strong>local</strong> (já carregada)
+            e o restore é na VPS. As duas tabelas de contagem por CEP acompanham
+            a base para o site não exibir número velho — sem
+            <code>c_estabelecimentos</code> no lote, elas não são recalculadas.
+          </p>
+          <p class="help" style="margin:4px 0 0;color:#8a6d00">
+            Sem <code>c_empresas</code> no lote, <code>c_socios</code> sobe sem a
+            empresa correspondente: o site responde, mas o vínculo sócio-empresa
+            fica incompleto até a próxima carga de <code>c_empresas</code>.
+          </p>
+        </div>
+
+        <div class="form-row">
+          <label for="jobs_pub">Jobs:</label>
+          <input type="number" name="jobs_pub" id="jobs_pub" min="1" max="8"
+                 value="{{ publicacao_jobs }}" style="width:5em">
+          <span class="help">Restore e índices em paralelo (uma conexão por job).</span>
+        </div>
+
+        <div class="form-row">
+          <label>Durante o restore:</label>
+          <label style="font-weight:normal">
+            <input type="checkbox" name="parar_servico" checked>
+            parar <code>{{ publicacao_servico }}.service</code> (site fora do ar por 20–40 min)
+          </label>
+          <label style="font-weight:normal;margin-left:16px">
+            <input type="checkbox" name="backup_prod" checked>
+            <code>pg_dump</code> de rollback na VPS antes de truncar
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label for="confirmacao_prod">Confirmação:</label>
+          <input type="text" name="confirmacao_prod" id="confirmacao_prod"
+                 size="12" placeholder="PUBLICAR">
+          <span class="help">
+            Obrigatório para <code>restaurar</code>, <code>indices</code> e
+            <code>tudo</code>: essas fases apagam dados na VPS. Digite <code>PUBLICAR</code>.
+          </span>
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <input type="submit" value="Publicar na VPS" class="default"
+               {% if not publicacao_ssh %}disabled{% endif %}>
+      </div>
+    </form>
+  </div>
+
+  <p class="help">
+    Antes da carga completa vale um ensaio com <code>c_paises</code> e
+    <code>c_motivos</code> (domínios, segundos por fase). O DDL dos índices é
+    salvo na VPS em <code>~/{{ publicacao_remoto }}/ddl/&lt;rótulo&gt;/</code>
+    antes de qualquer remoção.
+  </p>
+
+
+  <script>
+    function marcarTodas(valor) {
+      document.querySelectorAll('input[name="tabelas"]').forEach(function (caixa) {
+        caixa.checked = valor;
+      });
+    }
+    function marcarSomente(id) {
+      marcarTodas(false);
+      document.getElementById(id).checked = true;
+    }
+    function marcarGrupo(grupo) {
+      marcarTodas(false);
+      document.querySelectorAll('input[name="tabelas"][data-grupo="' + grupo + '"]')
+        .forEach(function (caixa) { caixa.checked = true; });
+    }
+    function marcarProdTodas(valor) {
+      document.querySelectorAll('input[name="tabelas_prod"]').forEach(function (caixa) {
+        caixa.checked = valor;
+      });
+    }
+    function marcarProdGrupo(grupo) {
+      marcarProdTodas(false);
+      document.querySelectorAll('input[name="tabelas_prod"][data-grupo="' + grupo + '"]')
+        .forEach(function (caixa) { caixa.checked = true; });
+    }
+  </script>
+{% endblock %}

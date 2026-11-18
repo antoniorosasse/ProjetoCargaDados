@@ -18,9 +18,9 @@ class ControleArquivos:
         )
     
     @staticmethod
-    def ja_processado(caminho_arquivo, banco_destino, tabela):
+    def ja_processado(caminho_arquivo, banco_destino, tabela, rotulo=None):
         """Verifica se o arquivo já foi processado"""
-        nome_arquivo = os.path.basename(caminho_arquivo)
+        nome_arquivo = rotulo or os.path.basename(caminho_arquivo)
         
         conn = ControleArquivos._get_connection()
         cur = conn.cursor()
@@ -39,9 +39,9 @@ class ControleArquivos:
         return count > 0
     
     @staticmethod
-    def registrar_processamento(caminho_arquivo, banco_destino, tabela, total_registros, status='SUCESSO'):
+    def registrar_processamento(caminho_arquivo, banco_destino, tabela, total_registros, status='SUCESSO', rotulo=None):
         """Registra ou atualiza o processamento de um arquivo"""
-        nome_arquivo = os.path.basename(caminho_arquivo)
+        nome_arquivo = rotulo or os.path.basename(caminho_arquivo)
         
         conn = ControleArquivos._get_connection()
         cur = conn.cursor()

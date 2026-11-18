@@ -1,0 +1,11 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  {% if url_executar %}
+    <li><a href="{{ url_executar }}">Executar carga</a></li>
+  {% endif %}
+  {% if url_estatisticas %}
+    <li><a href="{{ url_estatisticas }}">Estatísticas por período</a></li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

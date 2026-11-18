@@ -1,0 +1,20 @@
+{% extends "admin/index.html" %}
+
+{% block content %}
+  <div class="module" style="margin-bottom:20px">
+    <h2>Carga da base CNPJ (RFB)</h2>
+    <div style="padding:10px 14px">
+      <p style="margin:0 0 8px">
+        <a href="{% url 'admin:etl_carga_executar' %}"><strong>Executar carga</strong></a>
+        &mdash; dispara o <code>carregar_base_cnpj</code> em segundo plano
+        (a página mostra o andamento).
+      </p>
+      <p style="margin:0">
+        <a href="{% url 'admin:etl_carga_estatisticas' %}">
+          Estatísticas: tempos, linhas e índices por período
+        </a>
+      </p>
+    </div>
+  </div>
+  {{ block.super }}
+{% endblock %}

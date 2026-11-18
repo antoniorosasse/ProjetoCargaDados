@@ -68,13 +68,20 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'carga_dados.wsgi.application'
 
-# ==================== BANCO DE DADOS (SQLite para simplicidade) ====================
-# Usaremos SQLite como banco padrão (para admin, sessões, etc.)
-# As conexões com PostgreSQL, MongoDB e AS/400 serão feitas separadamente
+# ==================== BANCO DE DADOS (Postgres django_internal) ====================
+# O admin deste projeto usa o MESMO banco de auth do cnpj_interface
+# (django_internal): um usuario criado em um admin entra no outro, sem
+# duplicar conta. As tabelas c_* continuam no bancocnpj, acessadas por
+# psycopg2 direto (etl/conexoes/postgres.py) e nao pelo ORM.
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DJANGO_DB', 'django_internal'),
+        'USER': os.getenv('DJANGO_DB_USER', 'django_app'),
+        'PASSWORD': os.getenv('DJANGO_DB_PASSWORD'),
+        'HOST': os.getenv('DJANGO_DB_HOST', 'localhost'),
+        'PORT': os.getenv('DJANGO_DB_PORT', '5432'),
+        'CONN_MAX_AGE': 60,
     }
 }
 
@@ -118,8 +125,54 @@ MONGO_DB = os.getenv('MONGO_DB')
 MONGO_USER = os.getenv('MONGO_USER')
 MONGO_PASSWORD = os.getenv('MONGO_PASSWORD')
 
-# ==================== VALIDAÇÃO (APENAS AS ESSENCIAIS) ====================
+# ==================== CARGA PELO ADMIN ====================
+# O admin dispara `manage.py carregar_base_cnpj` em subprocesso (etl/execucao.py).
+# O log de cada execucao fica em logs/execucoes/ (git ignora a pasta logs/).
+CARGA_LOG_DIR = BASE_DIR / 'logs' / 'execucoes'
+
+# Raizes onde o formulario aceita procurar pasta de .zip/.parquet. Sem isso o
+# campo viraria execucao de comando com caminho arbitrario. Ajuste no .env:
+#   CARGA_RAIZES=/mnt/NOTE_EXT4_SDD/DocumentosSSD/cnpj_lote:/home/neto/DataSetsTeste
+CARGA_RAIZES = [p.strip() for p in os.getenv(
+    'CARGA_RAIZES',
+    '/mnt/NOTE_EXT4_SDD/DocumentosSSD/cnpj_lote:/home/neto/DataSetsTeste',
+).split(':') if p.strip()]
+
+# ==================== PUBLICACAO NA VPS ====================
+# Leva a base daqui para a `bancocnpj` de producao (etl/publicacao.py +
+# `manage.py publicar_base_cnpj`). O acesso e sempre por SSH: a porta 5432 da
+# VPS e fechada para fora e o psql/pg_restore de la usam o ~/.pgpass do usuario
+# remoto -- nenhuma senha de producao passa pelo .env local.
+#   PUBLICACAO_SSH=neto@<host-da-vps>
+# Vazio = a secao de producao aparece na pagina desabilitada (nada e executado).
+PUBLICACAO_SSH = os.getenv('PUBLICACAO_SSH', '').strip()
+
+# Alvo do restore, no formato do PGPASSFILE: host:porta:banco:usuario
+PUBLICACAO_PG = os.getenv('PUBLICACAO_PG',
+                          'localhost:5432:bancocnpj:arosasse')
+
+# Servico systemd que publica a base (o script para/religa na janela)
+PUBLICACAO_SERVICO = os.getenv('PUBLICACAO_SERVICO', 'cnpj')
+
+# Dumps por tabela ficam aqui, um subdiretorio por rotulo. Precisa de ~8 GB
+# livres no lote completo (nao cabe em /, que tem pouco espaco).
+PUBLICACAO_DUMP_DIR = Path(os.getenv(
+    'PUBLICACAO_DUMP_DIR',
+    '/mnt/NOTE_EXT4_SDD/DocumentosSSD/cnpj_lote/pubs'))
+
+# Pasta na VPS que recebe dumps, script e log
+PUBLICACAO_REMOTO = os.getenv('PUBLICACAO_REMOTO', 'carga')
+
+# Restore/indices em paralelo (1 conexao por job)
+PUBLICACAO_JOBS = int(os.getenv('PUBLICACAO_JOBS', '4') or 4)
+
+# ==================== VALIDACAO (APENAS AS ESSENCIAIS) ====================
 # Apenas AS/400 é realmente necessário para os primeiros comandos.
 # As outras são opcionais; se não existirem, serão None.
 if not all([AS400_HOST, AS400_USER, AS400_PASSWORD, AS400_LIBRARY, AS400_JDBC_JAR]):
     raise ValueError("Variáveis do AS/400 não estão completamente definidas no .env!")
+
+# O admin nao sobe sem as credenciais do django_internal (banco de auth
+# compartilhado com o cnpj_interface).
+if not os.getenv('DJANGO_DB_PASSWORD'):
+    raise ValueError("A variável DJANGO_DB_PASSWORD não está definida no .env!")
