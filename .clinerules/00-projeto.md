@@ -49,10 +49,14 @@ decisoes que nao se reabrem).
 - `etl/processadores/`: `cnpj_processor.py` (le Parquet em chunks com
   pandas/pyarrow e grava em lote), `controle_arquivos.py` (marca arquivos ja
   processados).
-- `etl/management/commands/`: `importar_cnpj`, `carregar_ceps`, `carregar_municipios`,
+- `etl/management/commands/`: `importar_cnpj`, `carregar_base_cnpj` (carga local
+  em fases), `publicar_base_cnpj` (leva o lote para a VPS), `carregar_ceps`,
+  `carregar_municipios`,
   `contar_estab_por_cep`, `contar_estab_por_cep_situacao`, `carregar_pessoas_db2`,
   `migrar_para_mongo`, `migrar_postgres_para_mongo`, `migrar_tudo_para_mongo`,
   `testar_as400`, `testar_mongo`, `testar_postgres`.
+- `scripts/publica_lote.sh`: encadeia as fases `enviar -> restaurar -> indices`
+  com retomada (6 tentativas por fase) e anexa o RESUMO no log da execucao.
 - `carga_dados/settings.py` **exige** `.env` completo (`SECRET_KEY`, `AS400_*`,
   `PG_*`, `MONGO_*`) e levanta `ValueError` se faltar — e proposital: todo
   comando precisa do `.env` real para subir.
@@ -95,6 +99,14 @@ decisoes que nao se reabrem).
     # n_matrizes, n_total). Mesmo total/Pagina X de Y, mas com o filtro de
     # situacao ligado. Rodar depois do contar_estab_por_cep (~154 s).
     python manage.py contar_estab_por_cep_situacao --criar --exportar /tmp/ceps_estab_sit.csv
+
+    # Publicacao na VPS (dump local -> rsync -> pg_restore por SSH). O lote de
+    # 14 tabelas (7,05 GB / 231,2 M linhas) levou 1h28 em 18/11/2026: enviar
+    # 2 min, restaurar 24 min, indices 55 min (54 deles no indice de
+    # c_estabelecimentos) e estatisticas 7 min. Tempos por tabela no README.
+    setsid nohup scripts/publica_lote.sh [rotulo] [tabelas] >/dev/null 2>&1 &
+    python manage.py publicar_base_cnpj --fase <exportar|enviar|restaurar|indices|status> \
+        --rotulo 2026-11 --tabelas <lista> --jobs 4
 
 - Use sempre o Python do `venv/`. Nao altere `requirements.txt` sem pedir.
 - `etl/tests.py` esta vazio: a validacao pratica e `--test` / `--quantidade 100`

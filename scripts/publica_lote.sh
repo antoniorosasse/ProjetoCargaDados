@@ -11,7 +11,10 @@
 #   scripts/publica_lote.sh [rotulo] [tabelas]
 #
 # Sem argumentos: lote 2026-11 com as 14 tabelas (10 da RFB + 4 derivadas).
-# Rode sempre com setsid/nohup -- sao ~10 h de execucao.
+# Rode sempre com setsid/nohup. O lote de 14 tabelas (7,05 GB / 231,2 M linhas)
+# levou 1h28 em 18/11/2026: enviar 2 min, restaurar 24 min, indices 55 min (o
+# indice de c_estabelecimentos e 54 min disso) e estatisticas 7 min. Tempos por
+# tabela no README ("Publicar na VPS").
 #
 #   setsid nohup scripts/publica_lote.sh >/dev/null 2>&1 &
 #
@@ -195,7 +198,10 @@ else:
     escreve('')
     escreve('estatisticas da base: %s | servico do site: %s'
             % (fmt_seg(totais['estatisticas']), fmt_seg(totais['servico'])))
-    migradas = [a for a in ordem if dados[a].get('restaurar')]
+    # Uma etapa 'restaurar' de tabela pequena grava duracao_s = 0.0, que e falsy:
+    # testar a chave (e nao o valor) evita o resumo dizer "7 migradas" quando as
+    # 14 foram truncadas e restauradas (visto no lote 2026-11 de 18/11/2026).
+    migradas = [a for a in ordem if 'restaurar' in dados[a]]
     escreve('tabelas migradas: %d (%s)' % (len(migradas), ', '.join(migradas)))
 escreve('=======================================================')
 

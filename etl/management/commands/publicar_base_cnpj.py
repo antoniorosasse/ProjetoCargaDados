@@ -12,6 +12,14 @@ Um dump por tabela (e nao um dumpao) porque assim a escolha por tabela vale em
 todas as fases: refazer so c_paises custa segundos, um arquivo ruim nao
 invalida o lote e o ensaio por tabela convive com a carga completa.
 
+Tempos medidos no lote 2026-11 (14 tabelas, 7,05 GB / 231,2 M linhas, 18/11/2026,
+VPS com 4 jobs e disco local SSD): enviar 1min52s (os hashes ja estavam iguais),
+restaurar 24 min (backup de rollback 15,5 min + restore 9 min), indices 55 min
+(so o indice de c_estabelecimentos sao 54 min) e estatisticas 7 min -- 1h28 no
+total. Por tabela: c_estabelecimentos 74,4 M/8m32s/54m27s, c_empresas 71,1 M/
+3m39s/20m34s, c_simples 51,3 M/2m31s/4m38s, c_socios 28,7 M/1m50s/8m38s
+(linhas/restore/indice). A tabela completa esta no README ("Publicar na VPS").
+
 Nada aqui imprime senha: o pg_dump local usa PG_* do .env e o pg_restore da
 VPS usa o ~/.pgpass do usuario remoto. O acesso e sempre por SSH -- a porta
 5432 da VPS e fechada para fora.

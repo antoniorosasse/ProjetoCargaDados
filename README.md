@@ -139,6 +139,60 @@ Conferir as conexões:
        python manage.py importar_cnpj --pasta /caminho/dos/parquet --tabela c_simples --destino postgres
        python manage.py importar_cnpj --pasta /caminho/dos/parquet --tabela c_socios --destino postgres
 
+## Publicar na VPS (produção)
+
+O `ProjetoCargaDados` **não existe na VPS**: a publicação é dump local → rsync →
+`pg_restore` remoto, por SSH. Cada tabela tem seu dump (`-Fc`), e a escolha por
+tabela vale em todas as fases.
+
+```bash
+# Lote inteiro (14 tabelas: as 10 da RFB + c_ceps, c_ceps_estab,
+# c_ceps_estab_sit e c_municipios_geo). Rode com setsid/nohup: são horas.
+setsid nohup scripts/publica_lote.sh [rotulo] [tabelas] >/dev/null 2>&1 &
+
+# Uma fase por vez (o script faz retomada de cada uma)
+python manage.py publicar_base_cnpj --fase enviar    --rotulo 2026-11 --tabelas c_estabelecimentos
+python manage.py publicar_base_cnpj --fase restaurar --rotulo 2026-11 --tabelas c_estabelecimentos --jobs 4
+python manage.py publicar_base_cnpj --fase indices   --rotulo 2026-11 --tabelas c_estabelecimentos
+python manage.py publicar_base_cnpj --fase status    --rotulo 2026-11
+```
+
+Fases: `exportar` (pg_dump por tabela no SSD), `enviar` (rsync retomável, pula
+dump idêntico pelo sha256), `restaurar` (drop de constraints/índices, backup de
+rollback, `TRUNCATE`, `pg_restore --data-only` em `jobs` paralelos, site parado)
+e `indices` (post-data + `ANALYZE` + religa o `cnpj.service`).
+
+### Tempos medidos — lote 2026-11 (18/11/2026, 14 tabelas, 7,05 GB, 231,2 M linhas)
+
+| tabela | linhas | restore | índices | ANALYZE |
+|---|---:|---:|---:|---:|
+| c_estabelecimentos | 74.373.417 | 8m32s | **54m27s** | 3s |
+| c_empresas | 71.068.585 | 3m39s | 20m34s | 7s |
+| c_simples | 51.328.896 | 2m31s | 4m38s | 2s |
+| c_socios | 28.671.796 | 1m50s | 8m38s | 11s |
+| c_ceps_estab_sit | 3.162.447 | 4s | 10s | 1s |
+| c_ceps_estab | 1.285.808 | 1s | 3s | 1s |
+| c_ceps | 1.256.551 | 6s | 3s | 1s |
+| c_municipios_geo / c_municipios | 5.572 | 0s | 0s | 1s |
+| c_cnaes … c_motivos (6 de domínio) | 63–1.359 | 0s | 0s | 0s |
+
+Total: **1h28** — enviar 2 min, restaurar 24 min (backup 15,5 min + restore
+9 min), índices 55 min e estatísticas 7 min. O gargalo é um só: o índice de
+`c_estabelecimentos` (54 dos 55 min). O backup de rollback
+(`~/carga/backups/pre_<rotulo>_<ts>.dump`) sai com ~3,9 GB e fica até a
+conferência.
+
+### Conferir depois
+
+- `count(*)` das tabelas grandes tem que bater com o local —
+  **não** use `pg_class.reltuples` nem `n_live_tup`: são estimativas do
+  `ANALYZE` (amostra de ~60 mil linhas) e erram por 0,005–0,06% nos dois
+  sentidos. No lote 2026-11 o `reltuples` de `c_estabelecimentos` dava
+  74.327.480 contra 74.373.417 reais, e o próprio banco local exibia o mesmo
+  tipo de desvio.
+- `EXPLAIN` de uma busca por `cnpj_basico` e por `cep` para confirmar que os
+  índices recriados estão em uso.
+
 ## Comandos de ETL
 
 ### Importar Parquet pra Postgres ou Mongo
