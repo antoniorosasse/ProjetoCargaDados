@@ -177,7 +177,7 @@ e `indices` (post-data + `ANALYZE` + religa o `cnpj.service`).
 | c_cnaes … c_motivos (6 de domínio) | 63–1.359 | 0s | 0s | 0s |
 
 Total: **1h28** — enviar 2 min, restaurar 24 min (backup 15,5 min + restore
-9 min), índices 55 min e estatísticas 7 min. O gargalo é um só: o índice de
+~8,5 min), índices 55 min e estatísticas 7 min. O gargalo é um só: o índice de
 `c_estabelecimentos` (54 dos 55 min). O backup de rollback
 (`~/carga/backups/pre_<rotulo>_<ts>.dump`) sai com ~3,9 GB e fica até a
 conferência.
