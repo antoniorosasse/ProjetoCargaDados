@@ -92,12 +92,12 @@ decisoes que nao se reabrem).
 
     # Contagem por CEP: cria/atualiza c_ceps_estab (cep, n_matrizes, n_total)
     # da o total e o "Pagina X de Y" da /proximidade/ do cnpj_interface.
-    # Rodar DEPOIS do importar_cnpj: GROUP BY em 38,5M (~90 s) + troca (~30 s).
+    # Rodar DEPOIS do importar_cnpj: GROUP BY em 74,4M (~90 s medidos em 38,5M) + troca (~30 s).
     python manage.py contar_estab_por_cep --criar --exportar /tmp/ceps_estab.csv
 
     # Contagem por CEP e situacao: c_ceps_estab_sit (cep, cd_sit_cadastro,
     # n_matrizes, n_total). Mesmo total/Pagina X de Y, mas com o filtro de
-    # situacao ligado. Rodar depois do contar_estab_por_cep (~154 s).
+    # situacao ligado. Rodar depois do contar_estab_por_cep (~154 s medidos em 38,5M).
     python manage.py contar_estab_por_cep_situacao --criar --exportar /tmp/ceps_estab_sit.csv
 
     # Publicacao na VPS (dump local -> rsync -> pg_restore por SSH). O lote de
